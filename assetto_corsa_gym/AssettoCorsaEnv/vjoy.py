@@ -18,10 +18,14 @@ class vJoy(object):
         return False
 
     def close(self):
-        if self.dll.RelinquishVJD(self.reference):
-            self.acquired = False
-            return True
-        return False
+        # RelinquishVJD returns void, so its result cannot be checked
+        self.dll.RelinquishVJD(self.reference)
+        self.acquired = False
+        return True
+
+    def status(self):
+        """Device status: 0 OWN, 1 FREE, 2 BUSY (owned by another process), 3 MISS, 4 UNKN."""
+        return self.dll.GetVJDStatus(self.reference)
 
     def generateJoystickPosition(self,
                                  wThrottle=0, wRudder=0, wAileron=0,

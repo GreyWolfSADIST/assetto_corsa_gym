@@ -19,11 +19,14 @@ import logging
 logger = logging.getLogger(__name__)
 SCALE = 16384
 
+VJD_STAT_OWN = 0
+VJD_STATUS_NAMES = {0: "OWN", 1: "FREE", 2: "BUSY", 3: "MISS", 4: "UNKN"}
+
 class Controls(object):
     def __init__(self):
         self.onButtons = 0
         self.vj = vJoy()
-        self.vj.open()
+        self.open()
 
         # internal state
         self.steer = 1.0        # [0, 2]
@@ -40,8 +43,28 @@ class Controls(object):
 
         self.ct_12_stop = False
 
+    def open(self):
+        """Acquire the vJoy device. Raises if another process holds it,
+        because then the controls would be silently ignored by the game."""
+        if self.vj.acquired:
+            return
+        if self.vj.open():
+            return
+        status = self.vj.status() if hasattr(self.vj, "status") else None
+        if status == VJD_STAT_OWN:
+            # already acquired by this process (e.g. by another Controls object)
+            self.vj.acquired = True
+            return
+        raise RuntimeError(
+            "Cannot acquire vJoy device %d (status: %s). Another process holds it, "
+            "e.g. a Jupyter kernel with an open client or another train.py. "
+            "Close that process and retry." % (self.vj.reference, VJD_STATUS_NAMES.get(status, status)))
+
     def close(self):
-        self.vj.close()
+        """Release the vJoy device so other processes can use it.
+        The next update() acquires it again."""
+        if self.vj.acquired:
+            self.vj.close()
 
     def trigger_emergency_stop(self):
         self.ct_12_stop = True
@@ -101,5 +124,7 @@ class Controls(object):
         yPos = int(valueY * 2 * scale)
         zPos = int(valueZ * 2 * scale)
 
+        self.open()
         joystickPosition = self.vj.generateJoystickPosition(wAxisX= xPos, wAxisY=yPos, wAxisZ=zPos, lButtons=onButtons)
-        self.vj.update(joystickPosition)
+        if not self.vj.update(joystickPosition):
+            raise RuntimeError("vJoy update failed for device %d" % self.vj.reference)

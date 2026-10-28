@@ -167,6 +167,9 @@ class Client():
         if not self.vjoy_executed_by_server:
             self.controls.set_defaults()
             self.controls.apply_local_controls()
+            # release vJoy so a later process (e.g. train.py after a notebook) can acquire it;
+            # the next apply_local_controls() acquires it again
+            self.controls.release_local_controls()
         self.reply_to_server("disconnect")
         time.sleep(0.1)
         if self.socket:
@@ -271,6 +274,9 @@ class DriverControls(dict):
                                          enable_gear_shift=self["enable_gear_shift"],
                                          shift_up=self["shift_up"],
                                          shift_down=self["shift_down"])
+
+    def release_local_controls(self):
+        self.local_controls.close()
 
     def export(self):
         return json.dumps(self)
