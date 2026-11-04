@@ -32,6 +32,8 @@ class Car(dict):
 
         # Car info
         self["packetId"]                = info.graphics.packetId
+        # Physics page packet id: advances at the physics rate (~333 Hz), used for latency measurements
+        self["physicsPacketId"]         = info.physics.packetId
         self["currentTime"]             = info.graphics.iCurrentTime
         world_position                  = ac.getCarState(self.car_id, acsys.CS.WorldPosition)
         self['world_position_x']          = world_position[2]
@@ -47,6 +49,8 @@ class Car(dict):
 
         self['accelX']                  = ac.getCarState(self.car_id, acsys.CS.AccG)[0]
         self['accelY']                  = ac.getCarState(self.car_id, acsys.CS.AccG)[2]
+        # Vertical (car's up axis); named z like world_position_z
+        self['accelZ']                  = ac.getCarState(self.car_id, acsys.CS.AccG)[1]
         #self['driverName']              = ac.getDriverName(self.car_id)
 
         self['accStatus']             = ac.getCarState(self.car_id, acsys.CS.Gas)
@@ -152,6 +156,8 @@ class Car(dict):
             self['fl_tire_pressure'], self['fr_tire_pressure'], self['rl_tire_pressure'], self['rr_tire_pressure'] = ac.getCarState(self.car_id, acsys.CS.DynamicPressure)
             # Tyre wear from the shared memory physics page [FL, FR, RL, RR]
             self['fl_tire_wear'], self['fr_tire_wear'], self['rl_tire_wear'], self['rr_tire_wear'] = list(info.physics.tyreWear)
+            # Brake disc temperature from the shared memory physics page [FL, FR, RL, RR]
+            self['fl_brake_temp'], self['fr_brake_temp'], self['rl_brake_temp'], self['rr_brake_temp'] = list(info.physics.brakeTemp)
 
             # # TODO verify this interface is correct
             # self['drag_coefficient'] = ac.getCarState(self.car_id, acsys.CS.Aero, '0')

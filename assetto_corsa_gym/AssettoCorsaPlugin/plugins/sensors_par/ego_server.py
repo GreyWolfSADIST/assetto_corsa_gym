@@ -201,16 +201,20 @@ class EgoServer:
             win32event.SetEvent(self.hEgoSamplingEvent)
 
         ## if control loop down sample, send telemetry to client
-        if self.current_client and self.current_client.initialized:
+        # Local reference: the server thread sets self.current_client to None when the client
+        # disconnects (e.g. at every episode reset), possibly between the check and the send.
+        client = self.current_client
+        if client and client.initialized:
             if (self.total_steps % (self.config.sampling_freq // self.config.ego_sampling_freq)) == 0:
                 try:
                     self.car.update(self.track)
                     car_export = self.car.export()
                     self.profiler.add_event("send")
-                    self.current_client.send_reply(car_export)
+                    client.send_reply(car_export)
                 except ConnectionResetError:
-                    logger.error("Connection to client {} was lost".format(self.current_client.addr))
-                    self.current_client = None
+                    logger.error("Connection to client {} was lost".format(client.addr))
+                    if self.current_client is client:
+                        self.current_client = None
                 except Exception:
                     logger.exception("An error occurred in the tick function")
 
