@@ -150,6 +150,8 @@ class Car(dict):
             self['fl_damper_linear_potentiometer'], self['fr_damper_linear_potentiometer'], self['rl_damper_linear_potentiometer'], self['rr_damper_linear_potentiometer'] = ac.getCarState(self.car_id, acsys.CS.SuspensionTravel)
             self['fl_wheel_load'], self['fr_wheel_load'], self['rl_wheel_load'], self['rr_wheel_load'] = ac.getCarState(self.car_id, acsys.CS.Load)
             self['fl_tire_pressure'], self['fr_tire_pressure'], self['rl_tire_pressure'], self['rr_tire_pressure'] = ac.getCarState(self.car_id, acsys.CS.DynamicPressure)
+            # Tyre wear from the shared memory physics page [FL, FR, RL, RR]
+            self['fl_tire_wear'], self['fr_tire_wear'], self['rl_tire_wear'], self['rr_tire_wear'] = list(info.physics.tyreWear)
 
             # # TODO verify this interface is correct
             # self['drag_coefficient'] = ac.getCarState(self.car_id, acsys.CS.Aero, '0')
