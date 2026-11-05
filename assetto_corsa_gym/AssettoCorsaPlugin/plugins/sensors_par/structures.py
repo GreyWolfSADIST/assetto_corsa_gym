@@ -16,6 +16,23 @@ from sim_info import info
 import logging
 logger = logging.getLogger(__name__)
 
+# Tyre forces and surface grip from the CSP Lua probe DR01WheelProbe (DR_01: D-21, N-31)
+try:
+    import wheel_probe
+except ImportError:
+    wheel_probe = None
+    logger.warning("wheel_probe module not available; records without probe fields")
+
+
+def open_wheel_probe():
+    if wheel_probe is None:
+        return None
+    try:
+        return wheel_probe.WheelProbeReader()
+    except Exception:
+        logger.exception("Cannot open the wheel probe shared memory; records without probe fields")
+        return None
+
 class Car(dict):
 
     def __init__(self, car_id, send_extra_channels=True):
@@ -24,6 +41,8 @@ class Car(dict):
         self["timestamp_ac"] = time.perf_counter()
         self.send_extra_channels = send_extra_channels
         self.total_errors_out_of_sync = 0
+        self.wheel_probe = open_wheel_probe() if send_extra_channels else None
+        self.wheel_probe_errors = 0
 
     def update(self, track):
         self["steps"] += 1
@@ -158,6 +177,8 @@ class Car(dict):
             self['fl_tire_wear'], self['fr_tire_wear'], self['rl_tire_wear'], self['rr_tire_wear'] = list(info.physics.tyreWear)
             # Brake disc temperature from the shared memory physics page [FL, FR, RL, RR]
             self['fl_brake_temp'], self['fr_brake_temp'], self['rl_brake_temp'], self['rr_brake_temp'] = list(info.physics.brakeTemp)
+            # Tyre forces, load and surface grip from the CSP Lua probe, read in this frame (N-31 in DR_01)
+            self.update_wheel_probe()
 
             # # TODO verify this interface is correct
             # self['drag_coefficient'] = ac.getCarState(self.car_id, acsys.CS.Aero, '0')
@@ -167,6 +188,21 @@ class Car(dict):
             # does not work
             # self['tyre_heading_vector']  = ac.getCarState(self.car_id, acsys.CS.TyreHeadingVector) -> does not work
 
+
+    def update_wheel_probe(self):
+        """Adds probe_* fields; on failure the record goes without them (the client sees no forces)."""
+        for key in ("probe_frame", "probe_fx", "probe_fy", "probe_load", "probe_surface_grip", "probe_surface_valid"):
+            self.pop(key, None)
+        if self.wheel_probe is None:
+            return
+        try:
+            probe = self.wheel_probe.read()
+            if probe is not None:
+                dict.update(self, wheel_probe.record_fields(probe))  # Car.update is the record refresh
+        except Exception:
+            self.wheel_probe_errors += 1
+            if self.wheel_probe_errors == 1:
+                logger.exception("Cannot read the wheel probe")
 
     def distance_from_lanes(self, track):
 
