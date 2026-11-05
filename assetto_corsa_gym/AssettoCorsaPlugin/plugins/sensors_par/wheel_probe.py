@@ -3,7 +3,7 @@
 The probe (Lua app in the DR_01 research repository, ac_plugin/lua/DR01WheelProbe) writes the
 player car's ac.StateWheel fields every graphics frame: tyre forces fx, fy (N), load, surface grip
 under each wheel. acsys does not expose tyre forces, so the plugin reads them here and adds them
-to its state record in the same frame as the rest of the record (DR_01: D-21, N-31).
+to its state record, aligned to the frame of the record (DR_01: D-21, N-31; structures.Car).
 
 The field layout must match LAYOUT in DR01WheelProbe.lua (checked by a test in DR_01).
 Runs inside the game: Python 3.3, no f-strings.
@@ -58,7 +58,9 @@ class WheelProbeReader(object):
 def record_fields(probe):
     """Record fields from a probe copy: game units and signs (fx positive backwards, fy positive left).
 
-    probe_load lets the client check that the probe and the acsys channels come from the same frame.
+    structures.Car sends them with the record that follows the one they belong to (frame alignment,
+    see Car.poll_wheel_probe). probe_load lets the client check that the probe and the acsys channels
+    come from the same frame.
     """
     return {
         "probe_frame": probe.frame,

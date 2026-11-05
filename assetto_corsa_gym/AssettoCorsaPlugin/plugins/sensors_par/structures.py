@@ -43,6 +43,8 @@ class Car(dict):
         self.total_errors_out_of_sync = 0
         self.wheel_probe = open_wheel_probe() if send_extra_channels else None
         self.wheel_probe_errors = 0
+        self._probe_wait = None   # probe frame that holds the data of the last record's frame
+        self._probe_stash = None  # that probe copy, sent with the next record
 
     def update(self, track):
         self["steps"] += 1
@@ -189,20 +191,51 @@ class Car(dict):
             # self['tyre_heading_vector']  = ac.getCarState(self.car_id, acsys.CS.TyreHeadingVector) -> does not work
 
 
+    # Frame alignment (DR_01 N-31). The Lua probe writes after the Python apps in each graphics frame,
+    # so during acUpdate of frame k the probe memory holds frame k-1, and the data of frame k (the frame
+    # of a record built now) appears only in frame k+1. Measured 05.11: probe copy taken in the same
+    # acUpdate matched the acsys loads in 0% of moving records, the copy from the next frame in 100%.
+    # Therefore each record carries probe_build_frame (probe frame visible while building it), and the
+    # probe_* fields of the PREVIOUS record: the copy with probe_frame == previous probe_build_frame + 1,
+    # caught by poll_wheel_probe() in the following frame. The client shifts them back by one record.
+    # The rest of the record is sent without any extra delay.
+
+    def poll_wheel_probe(self):
+        """Called every graphics frame (EgoServer.tick): keeps the probe copy for the last record."""
+        if self.wheel_probe is None or self._probe_wait is None:
+            return
+        try:
+            probe = self.wheel_probe.read()
+            if probe is not None and probe.frame == self._probe_wait:
+                self._probe_stash = probe
+                self._probe_wait = None
+        except Exception:
+            self._count_probe_error()
+
     def update_wheel_probe(self):
-        """Adds probe_* fields; on failure the record goes without them (the client sees no forces)."""
-        for key in ("probe_frame", "probe_fx", "probe_fy", "probe_load", "probe_surface_grip", "probe_surface_valid"):
+        """Adds probe_build_frame and the probe_* fields of the previous record (see above)."""
+        for key in ("probe_build_frame", "probe_frame", "probe_fx", "probe_fy", "probe_load",
+                    "probe_surface_grip", "probe_surface_valid"):
             self.pop(key, None)
         if self.wheel_probe is None:
             return
         try:
+            if self._probe_stash is not None:
+                dict.update(self, wheel_probe.record_fields(self._probe_stash))  # Car.update is the record refresh
+            self._probe_stash = None
             probe = self.wheel_probe.read()
             if probe is not None:
-                dict.update(self, wheel_probe.record_fields(probe))  # Car.update is the record refresh
+                self["probe_build_frame"] = probe.frame
+                self._probe_wait = probe.frame + 1 if probe.frame > 0 else None
+            else:
+                self._probe_wait = None
         except Exception:
-            self.wheel_probe_errors += 1
-            if self.wheel_probe_errors == 1:
-                logger.exception("Cannot read the wheel probe")
+            self._count_probe_error()
+
+    def _count_probe_error(self):
+        self.wheel_probe_errors += 1
+        if self.wheel_probe_errors == 1:
+            logger.exception("Cannot read the wheel probe")
 
     def distance_from_lanes(self, track):
 

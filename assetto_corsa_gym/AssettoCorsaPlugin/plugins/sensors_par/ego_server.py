@@ -186,6 +186,10 @@ class EgoServer:
 
     def tick(self):
         self.profiler.add_event("tick")
+        # every frame: catch the CSP wheel probe copy that belongs to the last record (structures.Car)
+        poll_wheel_probe = getattr(self.car, "poll_wheel_probe", None)
+        if poll_wheel_probe is not None:
+            poll_wheel_probe()
         # save telemetry
         if self.telemetry and self.telemetry.recording:
             if (self.total_steps % (self.config.sampling_freq // self.config.telemetry_sampling_freq)) == 0:
