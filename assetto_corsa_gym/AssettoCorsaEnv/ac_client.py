@@ -55,6 +55,14 @@ class SimulationManagement:
     def get_config(self):
         return eval(self.send_message("get_config", wait_response=True))
 
+    def set_ego_sampling_freq(self, freq_hz):
+        """Change the plugin record rate while the game runs; returns the rate the plugin reports."""
+        reply = self.send_message("set_ego_sampling_freq {}".format(freq_hz), wait_response=True) or ""
+        if not reply.startswith("ok "):
+            raise RuntimeError("Plugin did not accept set_ego_sampling_freq {}: {!r} (plugin older than "
+                               "this client? deploy sensors_par)".format(freq_hz, reply))
+        return float(reply.split()[1])
+
 
 class Client():
     def __init__(self, config):
@@ -144,6 +152,49 @@ class Client():
                 break
             except socket.timeout:
                 continue
+
+    def get_pending_inputs(self):
+        """States of all records already waiting in the socket buffer, oldest first; never blocks.
+
+        step_sim() reads one datagram per call, so after a pause in reading the following calls return
+        records that waited in the buffer (up to about a second old). A controller should act on the
+        newest record; a logger can keep them all.
+        """
+        states = []
+        if not self.socket:
+            return states
+        self.socket.setblocking(False)
+        try:
+            while True:
+                try:
+                    data, _ = self.socket.recvfrom(MAX_MSG_SIZE)
+                except (BlockingIOError, socket.timeout):
+                    break
+                data = data.decode()
+                if data == "disconnect":
+                    logger.info("Server stopped the connection")
+                    self.state["done"] = True
+                elif data != "identified":
+                    self.state.parse_server_str(data)
+                    states.append(self.state.copy())
+        finally:
+            self.socket.settimeout(2)
+        if states and self.screen_capture_enable:
+            _, _, self.current_image = self.camera.get_active_image()
+        return states
+
+    def step_sim_all(self):
+        """Like step_sim(), but returns the awaited state and every state queued behind it, oldest first.
+
+        The last state is the newest one: act on it, log all of them.
+        """
+        self.get_servers_input()
+        states = [self.state.copy()] + self.get_pending_inputs()
+        if self.record_controls_from_client and self.joystick_handler and self.joystick_handler.is_initialized():
+            inputs = self.joystick_handler.read_inputs()
+            for state in states:
+                state.update(inputs)
+        return states
 
     def respond_to_server(self):
         if not self.vjoy_executed_by_server:

@@ -2,11 +2,15 @@
 class Config(object):
     def __init__(self):
         self.version = "0.0.1"
-        self.sampling_freq = 50  # in Hz  # main tick sampling (FPS of AC)
+        # assumed FPS of AC: decimation of telemetry and screen capture (counted in frames);
+        # the ego server record rate does not depend on it
+        self.sampling_freq = 50  # in Hz
         self.sampling_time = 1 / self.sampling_freq
         self.ego_server_host_name = "0.0.0.0"
         self.ego_server_port = 2345
-        self.ego_sampling_freq = 25 # in Hz # downsampled tick sampling (FPS of ego server)
+        # records per second sent to the client; timed on the clock, at most one per graphics frame
+        # (ego_server.RecordClock); can be changed while the game runs ('set_ego_sampling_freq <Hz>')
+        self.ego_sampling_freq = 25 # in Hz
         self.telemetry_sampling_freq = 0 # in Hz # 0 disables it
 
         self.opponents_server_host_name = "0.0.0.0"

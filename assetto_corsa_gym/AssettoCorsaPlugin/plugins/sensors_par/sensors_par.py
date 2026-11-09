@@ -77,6 +77,22 @@ def reset_car():
     if controls:
         controls.set_controls(0, -1, -1)
 
+def set_ego_sampling_freq(command):
+    """'set_ego_sampling_freq <Hz>': change the record rate of the ego server while the game runs.
+
+    The ego server reads config.ego_sampling_freq every frame (ego_server.RecordClock); get_config
+    reports the new value, so the gym environment check at reset still compares like with like.
+    """
+    try:
+        freq = float(command.split()[1])
+    except (IndexError, ValueError):
+        return "error: expected 'set_ego_sampling_freq <Hz>'"
+    if not 1.0 <= freq <= 1000.0:
+        return "error: ego_sampling_freq must be within 1..1000 Hz, got {}".format(freq)
+    config.ego_sampling_freq = int(freq) if freq == int(freq) else freq
+    logger.info("[MGMT SERV] ego_sampling_freq set to {} Hz".format(config.ego_sampling_freq))
+    return "ok {}".format(config.ego_sampling_freq)
+
 def opponents_server_task():
     global opponents, config
 
@@ -149,6 +165,8 @@ def simulation_management_server_task():
                     elif data == "get_config":
                         cs.send(str(config.__dict__).encode('utf8'))
                         logger.info("Sending config")
+                    elif data.startswith("set_ego_sampling_freq"):
+                        cs.send(set_ego_sampling_freq(data).encode('utf8'))
                     else:
                         logger.info("[MGMT SERV] Unknown command: {}".format(data))
                         break

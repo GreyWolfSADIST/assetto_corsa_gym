@@ -66,6 +66,38 @@ class Client(dict):
     def export(self):
         return json.dumps(self)
 
+
+class RecordClock(object):
+    """Decides in which graphics frames the ego server sends a record.
+
+    acUpdate runs once per graphics frame, so sending every sampling_freq // ego_sampling_freq frames
+    ties the record rate to the FPS limit (FPS / 2 with the default config). This clock sends a record
+    when 1 / ego_sampling_freq has passed on time.perf_counter, with half a frame of tolerance, so an
+    exact multiple (50 FPS and 25 Hz) gives a record every 2nd frame without jitter. The rate is capped
+    by the FPS: at most one record per frame. After a pause or slow frames the schedule restarts instead
+    of sending a burst.
+    """
+
+    def __init__(self, frame_s=0.02):
+        self.frame_s = frame_s  # running estimate of the frame time [s]
+        self.next_due = None
+        self.last_frame = None
+
+    def due(self, now, freq_hz):
+        if self.last_frame is not None:
+            dt = now - self.last_frame
+            if 0.0 < dt < 0.5:
+                self.frame_s += 0.1 * (dt - self.frame_s)
+        self.last_frame = now
+        period = 1.0 / freq_hz
+        if self.next_due is None or now - self.next_due > period:
+            self.next_due = now
+        if now >= self.next_due - 0.5 * self.frame_s:
+            self.next_due += period
+            return True
+        return False
+
+
 class EgoServer:
     def __init__(self, config, car, controls, telemetry, track):
         self.host = config.ego_server_host_name
@@ -81,6 +113,7 @@ class EgoServer:
         self.total_errors_out_of_sync = 0
         self.total_steps = 0
         self.socket_open = False
+        self.record_clock = RecordClock(frame_s=1.0 / config.sampling_freq)
 
         # ----- Create the named events -----
         if self.config.screen_capture_enable:
@@ -207,11 +240,16 @@ class EgoServer:
         ## if control loop down sample, send telemetry to client
         # Local reference: the server thread sets self.current_client to None when the client
         # disconnects (e.g. at every episode reset), possibly between the check and the send.
+        # The record rate follows ego_sampling_freq on the clock, not a frame count, so it does not change
+        # with the FPS limit (RecordClock); ego_sampling_freq can be changed while the game runs.
+        record_due = self.record_clock.due(time.perf_counter(), self.config.ego_sampling_freq)
         client = self.current_client
         if client and client.initialized:
-            if (self.total_steps % (self.config.sampling_freq // self.config.ego_sampling_freq)) == 0:
+            if record_due:
                 try:
                     self.car.update(self.track)
+                    self.car["pluginFrame"] = self.total_steps
+                    self.car["egoSamplingFreq"] = self.config.ego_sampling_freq
                     car_export = self.car.export()
                     self.profiler.add_event("send")
                     client.send_reply(car_export)
